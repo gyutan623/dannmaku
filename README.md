@@ -2,17 +2,14 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>弾幕ゲーム改</title>
+<title>弾幕ゲームEX</title>
 <style>
 body {
   margin: 0;
   overflow: hidden;
-  background: radial-gradient(circle, #000010, #000000);
+  background: radial-gradient(circle, #020024, #000000);
   color: white;
   font-family: sans-serif;
-}
-canvas {
-  display: block;
 }
 #ui {
   position: absolute;
@@ -37,41 +34,40 @@ canvas.height = window.innerHeight;
 // ===== プレイヤー =====
 let player = {
   x: canvas.width/2,
-  y: canvas.height-100,
-  size: 8,
-  speed: 5,
-  lives: 3
+  y: canvas.height-150,
+  size: 4, // 当たり判定小さく
+  lives: 3,
+  invincible: 0,
+  bombs: 3
 };
 
 // ===== 状態 =====
 let bullets = [];
-let keys = {};
 let frame = 0;
 let score = 0;
+let graze = 0;
 let gameOver = false;
 
-// ===== 入力 =====
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
+// ===== マウス操作 =====
+canvas.addEventListener("mousemove", e=>{
+  player.x = e.clientX;
+  player.y = e.clientY;
+});
 
-// ===== プレイヤー移動 =====
-function movePlayer() {
-  let sp = keys["Shift"] ? 2 : player.speed;
+// ===== 右クリックでボム =====
+canvas.addEventListener("contextmenu", e=>{
+  e.preventDefault();
+  if(player.bombs > 0){
+    bullets = [];
+    player.bombs--;
+  }
+});
 
-  if (keys["ArrowLeft"]) player.x -= sp;
-  if (keys["ArrowRight"]) player.x += sp;
-  if (keys["ArrowUp"]) player.y -= sp;
-  if (keys["ArrowDown"]) player.y += sp;
-
-  player.x = Math.max(0, Math.min(canvas.width, player.x));
-  player.y = Math.max(0, Math.min(canvas.height, player.y));
-}
-
-// ===== 弾幕① 回転弾 =====
+// ===== 弾幕① 回転 =====
 let angle = 0;
-function patternCircle() {
-  for (let i=0;i<16;i++){
-    let a = angle + (Math.PI*2/16)*i;
+function patternCircle(){
+  for(let i=0;i<20;i++){
+    let a = angle + i*(Math.PI*2/20);
     bullets.push({
       x: canvas.width/2,
       y: 120,
@@ -81,42 +77,64 @@ function patternCircle() {
       color: `hsl(${frame%360},80%,60%)`
     });
   }
-  angle += 0.2;
+  angle += 0.15;
 }
 
-// ===== 弾幕② 狙い弾 =====
-function patternAim() {
+// ===== 弾幕② 狙い =====
+function patternAim(){
   let dx = player.x - canvas.width/2;
   let dy = player.y - 120;
-  let dist = Math.sqrt(dx*dx+dy*dy);
+  let d = Math.sqrt(dx*dx+dy*dy);
 
   bullets.push({
     x: canvas.width/2,
     y: 120,
-    dx: dx/dist*4,
-    dy: dy/dist*4,
+    dx: dx/d*5,
+    dy: dy/d*5,
     size: 6,
     color: "#ff4d6d"
   });
 }
 
+// ===== 弾幕③ 波 =====
+function patternWave(){
+  for(let i=0;i<10;i++){
+    bullets.push({
+      x: i*canvas.width/10,
+      y: 0,
+      dx: Math.sin(frame*0.1+i)*2,
+      dy: 3,
+      size: 5,
+      color: "#4cc9f0"
+    });
+  }
+}
+
 // ===== 更新 =====
-function updateBullets() {
+function update(){
   bullets.forEach(b=>{
     b.x += b.dx;
     b.y += b.dy;
   });
+
+  if(player.invincible > 0) player.invincible--;
 }
 
 // ===== 描画 =====
-function drawPlayer() {
+function drawPlayer(){
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, 6, 0, Math.PI*2);
+  ctx.fillStyle = player.invincible ? "#ffff00" : "#ffffff";
+  ctx.fill();
+
+  // 当たり判定表示
   ctx.beginPath();
   ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#ff0000";
   ctx.fill();
 }
 
-function drawBullets() {
+function drawBullets(){
   bullets.forEach(b=>{
     ctx.beginPath();
     ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
@@ -125,17 +143,25 @@ function drawBullets() {
   });
 }
 
-// ===== 当たり判定 =====
-function checkCollision() {
-  for (let b of bullets) {
+// ===== 判定 =====
+function collision(){
+  for(let b of bullets){
     let dx = player.x - b.x;
     let dy = player.y - b.y;
-    let dist = Math.sqrt(dx*dx + dy*dy);
+    let dist = Math.sqrt(dx*dx+dy*dy);
 
-    if (dist < player.size + b.size) {
+    // かすり
+    if(dist < player.size + b.size + 15){
+      graze++;
+      score += 2;
+    }
+
+    // 被弾
+    if(dist < player.size + b.size && player.invincible === 0){
       player.lives--;
-      bullets = []; // リセット
-      if (player.lives <= 0) {
+      player.invincible = 120;
+      bullets = [];
+      if(player.lives <= 0){
         gameOver = true;
       }
       break;
@@ -144,38 +170,40 @@ function checkCollision() {
 }
 
 // ===== UI =====
-function drawUI() {
+function drawUI(){
   ui.innerHTML = `
-    残機: ${player.lives} <br>
-    スコア: ${score} <br>
-    ${gameOver ? "Enterでコンティニュー" : ""}
+    残機:${player.lives} 
+    ボム:${player.bombs} <br>
+    スコア:${score} 
+    かすり:${graze} <br>
+    ${gameOver ? "Enterで復活" : ""}
   `;
 }
 
 // ===== コンティニュー =====
 document.addEventListener("keydown", e=>{
-  if (gameOver && e.key === "Enter") {
-    player.lives = 3;
-    score = 0;
-    bullets = [];
-    gameOver = false;
+  if(gameOver && e.key==="Enter"){
+    player.lives=3;
+    player.bombs=3;
+    score=0;
+    graze=0;
+    bullets=[];
+    gameOver=false;
   }
 });
 
 // ===== ループ =====
-function loop() {
-  ctx.fillStyle = "rgba(0,0,0,0.25)";
+function loop(){
+  ctx.fillStyle="rgba(0,0,0,0.2)";
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  if (!gameOver) {
-    movePlayer();
+  if(!gameOver){
+    if(frame%40===0) patternCircle();
+    if(frame%70===0) patternAim();
+    if(frame%100===0) patternWave();
 
-    if (frame % 40 === 0) patternCircle();
-    if (frame % 60 === 0) patternAim();
-
-    updateBullets();
-    checkCollision();
-
+    update();
+    collision();
     score++;
   }
 
